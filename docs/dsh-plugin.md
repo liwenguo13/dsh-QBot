@@ -181,7 +181,9 @@ Get-Content "$env:USERPROFILE\.dsh\profiles\desktop\package.json" -Raw
 
 装好插件并重启 DeepSeek Harness 后，会话输入框那一行会多出一个 **QBot 控制台** 按钮：
 
+- **只有会话 preset 是「QBot Trading Agent」（id `qbot`）时才出现**；极简模式、创造模式等其它 preset 下按钮不渲染；切走时自动收起面板；
 - 按钮边框绿色 = 本机 QBot host 有响应（鼠标悬停显示模式与权益）；红色 = host 未连接；
+- 判据来自会话的 `agentPreset` 投影值（与会话头部那个 preset 标签同源）；应急强制显示：控制台执行 `localStorage.setItem("qbot-console-always","1")` 后刷新页面。
 - 点一下在窗口右上浮出完整面板（模式切换 / 启动停止 / 立即跑一轮 / 紧急平仓 / 间隔 / 收益 / 多专家讨论），再点收起；
 - 面板端口可配置：客户端会依次探测 8791 / 8790 / 8792 / 8793，用第一个响应的那个；
 - 安全：面板只监听 127.0.0.1；`/qbot/control` 会校验来源，只接受本机来源（无 Origin 或 `http://127.0.0.1:*` / `http://localhost:*`），其他站点发起的请求返回 403，避免网页偷偷暂停循环或平仓。

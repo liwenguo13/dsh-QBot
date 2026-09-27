@@ -253,9 +253,45 @@ window.__ModuleLoader__.load({
         older.length > 0 ? h('div', null, h('div', { style: { color: '#5ffbc4', marginTop: '8px' } }, '历史轮次'), older) : null)
     }
 
-    function Toggle() {
+    // The console is a QBot-mode surface: it renders only in a session composed
+    // from the `qbot` agent preset (QBot Trading Agent). Session-scoped slots
+    // pass the standard props `sessionId`, `useProjection` and `useSessions` -
+    // the same accessors the shipped agent-preset label reads - so the gate needs
+    // no host round trip.
+    let warnedUnknownPreset = false
+    function forcedOn() {
+      try { return window.localStorage.getItem('qbot-console-always') === '1' } catch (error) { return false }
+    }
+    function usePresetGate(props) {
+      const hasProjection = props && typeof props.useProjection === "function"
+      const hasSessions = props && typeof props.useSessions === "function"
+      const sessionId = props ? props.sessionId : undefined
+      const fromProjection = hasProjection ? props.useProjection('agentPreset') : undefined
+      const fromSessions = hasSessions
+        ? props.useSessions(function (state) {
+          const row = sessionId && state.byId ? state.byId[sessionId] : undefined
+          const value = row && row.projectionValues ? row.projectionValues.agentPreset : undefined
+          return typeof value === "string" ? value : undefined
+        })
+        : undefined
+      return typeof fromSessions === "string" ? fromSessions : fromProjection
+    }
+
+    function Toggle(props) {
       const isOpen = useOpenState()
+      const preset = usePresetGate(props)
+      const forced = forcedOn()
       const [summary, setSummary] = useState({ ok: false })
+      // Leaving QBot mode closes the panel; an unknown preset hides the button.
+      useEffect(function () {
+        if (preset !== 'qbot' && !forced) {
+          setOpen(false)
+          if (preset === undefined && warnedUnknownPreset !== true) {
+            warnedUnknownPreset = true
+            console.info('[qbot-console] session preset unknown; console hidden. Force with localStorage.setItem("qbot-console-always", "1")')
+          }
+        }
+      }, [preset, forced])
       useEffect(function () {
         let stopped = false
         const tick = async function () {
@@ -272,6 +308,7 @@ window.__ModuleLoader__.load({
         const timer = setInterval(tick, 15000)
         return function () { stopped = true; clearInterval(timer) }
       }, [])
+      if (preset !== 'qbot' && !forced) return null
       return h('button', {
         type: 'button',
         onClick: function () { setOpen(!isOpen) },
