@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QBot Console</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;background:#050807;color:#d9fff5;font:13px/1.6 "IBM Plex Mono",Consolas,"Microsoft YaHei",monospace}
+  header{position:sticky;top:0;z-index:2147482999;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 14px;background:#070c0a;border-bottom:1px solid #1d5c4b}
+  .brand{font-weight:700;letter-spacing:.5px;color:#5ffbc4;margin-right:6px}
+  .group{display:flex;gap:6px;align-items:center;padding-left:10px;border-left:1px solid #143c31}
+  button{background:#0b1512;color:#bff7e6;border:1px solid #1d5c4b;border-radius:2px;padding:4px 10px;cursor:pointer;font:inherit}
+  button:hover{border-color:#3ee0a6;color:#eafff8}
+  button.on{background:#0f3a2d;border-color:#3ee0a6;color:#8effd2;font-weight:700}
+  button.danger{border-color:#7a2b2b;color:#ffc9c9}
+  button.danger:hover{border-color:#ff6b6b}
+  input[type=number]{width:64px;background:#0b1512;color:#d9fff5;border:1px solid #1d5c4b;border-radius:2px;padding:3px 6px;font:inherit}
+  #stat{padding:8px 14px;border-bottom:1px solid #10241f;color:#9fe8cd;white-space:pre-wrap}
+  #msg{padding:6px 14px;color:#ffd479;min-height:18px}
+  section{padding:10px 14px 18px}
+  h2{font-size:13px;color:#5ffbc4;margin:6px 0 8px;letter-spacing:.5px}
+  table{border-collapse:collapse;width:100%;margin:6px 0 12px}
+  th,td{border:1px solid #143c31;padding:4px 8px;text-align:left;vertical-align:top}
+  th{color:#7fd9bb;font-weight:600;background:#0a1411}
+  .pos{color:#5ffbc4}.neg{color:#ff8f8f}.muted{color:#6f9c8c}
+  .card{border:1px solid #143c31;background:#070d0b;margin:8px 0;padding:8px 10px}
+  .card h3{margin:0 0 6px;font-size:12px;color:#9fe8cd;font-weight:600}
+  .tag{display:inline-block;border:1px solid #1d5c4b;padding:0 6px;margin-right:6px;color:#8effd2}
+  .bar{display:inline-block;height:9px;background:#1d5c4b;vertical-align:middle}
+  .bar.up{background:#2f9e6f}.bar.dn{background:#9e3b3b}
+  pre{white-space:pre-wrap;margin:4px 0;color:#bff7e6}
+  #note{padding:10px 14px;color:#6f9c8c}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">QBot Console</span>
+  <span class="group" title="切换交易台模式">
+    <button id="m-paper" data-mode="paper">模拟盘</button>
+    <button id="m-testnet" data-mode="testnet">测试网</button>
+    <button id="m-live" data-mode="live" class="danger">实盘</button>
+  </span>
+  <span class="group">
+    <button id="btn-toggle">停止</button>
+    <button id="btn-once">立即跑一轮</button>
+    <button id="btn-flat" class="danger">紧急平仓</button>
+  </span>
+  <span class="group">
+    <label>间隔 <input id="interval" type="number" min="1" max="1440" step="1" value="60"> 分钟</label>
+    <button id="btn-interval">应用</button>
+  </span>
+</header>
+<div id="stat">加载中…</div>
+<div id="msg"></div>
+<section>
+  <h2>收益 / 账户</h2>
+  <div id="pnl"></div>
+  <div id="equity"></div>
+  <div id="positions"></div>
+  <div id="fills"></div>
+</section>
+<section>
+  <h2>多专家讨论（委员会）</h2>
+  <div id="committee"></div>
+  <div id="history"></div>
+  <div id="stats"></div>
+</section>
+<div id="note">右下角是浮动监控面板（可折叠 / 全屏）。本页每 5 秒刷新，数据来自本机 QBot host 面板端口。</div>
+<script src="/qbot-panel.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id) }
+  function n(v, d) { var x = Number(v); return isFinite(x) ? x.toFixed(d === undefined ? 2 : d) : '-' }
+  function pnl(v, d) { var x = Number(v); if (!isFinite(x)) return '<span class="muted">-</span>'; var s = x.toFixed(d === undefined ? 2 : d); return '<span class="' + (x > 0 ? 'pos' : (x < 0 ? 'neg' : 'muted')) + '">' + s + '</span>' }
+  function esc(t) { return String(t === undefined || t === null ? '' : t).replace(/[&<>]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] }) }
+  function say(t) { $('msg').textContent = t || '' }
+  function control(payload) {
+    return fetch('/qbot/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function (r) { return r.json() })
+      .then(function (j) { if (!j.ok) throw new Error(j.error || 'control failed'); return j })
+  }
+  function actionsText(actions) {
+    if (!actions || !actions.length) return '<span class="muted">无动作</span>'
+    return actions.map(function (a) {
+      var kind = a.action || a.type || '?'
+      var s = kind
+      if (a.symbol) s += ' ' + a.symbol
+      if (a.side) s += ' ' + a.side
+      if (a.notional) s += ' $' + n(a.notional, 0)
+      if (a.leverage) s += ' x' + a.leverage
+      if (a.stop_loss) s += ' stop ' + n(a.stop_loss, 0)
+      if (a.confidence !== undefined) s += ' c=' + n(a.confidence, 2)
+      return '<span class="tag">' + esc(s) + '</span>'
+    }).join('')
+  }
+  function renderPnl(j) {
+    var a = j.account || {}
+    var rows = []
+    rows.push('<table><tr><th>模式</th><th>权益</th><th>今日盈亏</th><th>已实现</th><th>手续费</th><th>峰值权益</th><th>回撤</th><th>起始资金</th></tr>')
+    rows.push('<tr><td>' + esc(j.mode) + '</td><td>' + n(a.equity) + '</td><td>' + pnl(a.dayPnl) + '</td><td>' + pnl(a.realizedPnl) + '</td><td>' + n(a.totalFees) + '</td><td>' + n(a.peakEquity || (j.autopilot || {}).peakEquity) + '</td><td>' + n((j.autopilot || {}).drawdownPct) + '%</td><td>' + n(a.startingWallet) + '</td></tr></table>')
+    $('pnl').innerHTML = rows.join('')
+    var hist = ((j.autopilot || {}).equityHistory) || []
+    if (hist.length < 2) { $('equity').innerHTML = '<div class="muted">权益曲线：样本不足（每个 cycle 记一个点）</div>'; return }
+    var vals = hist.map(function (p) { return Number(p.equity) })
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals)
+    var span = Math.max(1e-9, max - min)
+    var first = vals[0], last = vals[vals.length - 1]
+    var bars = vals.slice(-60).map(function (v) {
+      var h = 4 + Math.round(28 * (v - min) / span)
+      return '<span class="bar ' + (v >= first ? 'up' : 'dn') + '" style="height:' + h + 'px;width:6px;margin-right:1px"></span>'
+    }).join('')
+    $('equity').innerHTML = '<div>权益曲线（' + vals.length + ' 点，最新 ' + n(last) + '，区间 ' + n(min) + ' ~ ' + n(max) + '，累计 ' + pnl(last - first) + '）</div><div style="margin:6px 0">' + bars + '</div>'
+  }
+  function renderPositions(j) {
+    var ps = j.positions || []
+    if (!ps.length) { $('positions').innerHTML = '<div class="muted">当前无持仓</div>'; return }
+    var h = ['<table><tr><th>品种</th><th>方向</th><th>数量</th><th>开仓价</th><th>标记价</th><th>名义</th><th>未实现盈亏</th><th>止损/止盈</th></tr>']
+    ps.forEach(function (p) {
+      h.push('<tr><td>' + esc(p.symbol) + '</td><td>' + esc(p.side) + '</td><td>' + n(p.qty, 6) + '</td><td>' + n(p.entryPrice || p.entry) + '</td><td>' + n(p.markPrice || p.mark) + '</td><td>' + n(p.notional, 0) + '</td><td>' + pnl(p.unrealizedPnl !== undefined ? p.unrealizedPnl : p.pnl) + '</td><td>' + n(p.stopLoss, 0) + ' / ' + n(p.takeProfit, 0) + '</td></tr>')
+    })
+    $('positions').innerHTML = h.join('') + '</table>'
+  }
+  function renderFills(j) {
+    var fs = (j.recentFills || []).slice(-12).reverse()
+    if (!fs.length) { $('fills').innerHTML = '<div class="muted">暂无成交</div>'; return }
+    var h = ['<table><tr><th>时间</th><th>品种</th><th>方向</th><th>数量</th><th>价格</th><th>手续费</th><th>已实现</th></tr>']
+    fs.forEach(function (f) {
+      h.push('<tr><td>' + esc(String(f.at || f.time || '').slice(0, 19).replace('T', ' ')) + '</td><td>' + esc(f.symbol) + '</td><td>' + esc(f.side) + '</td><td>' + n(f.qty, 6) + '</td><td>' + n(f.price) + '</td><td>' + n(f.fee, 4) + '</td><td>' + pnl(f.realizedPnl) + '</td></tr>')
+    })
+    $('fills').innerHTML = h.join('') + '</table>'
+  }
+  function memberTable(members) {
+    if (!members || !members.length) return '<div class="muted">本轮无专家返回</div>'
+    var h = ['<table><tr><th>专家</th><th>状态</th><th>判断</th><th>置信度</th><th>发言</th><th>动作</th></tr>']
+    members.forEach(function (m) {
+      h.push('<tr><td>' + esc(m.model) + '</td><td>' + (m.ok ? '<span class="pos">ok</span>' : '<span class="neg">' + esc(String(m.error || 'failed').slice(0, 120)) + '</span>') + '</td><td>' + esc(m.regime || '-') + '</td><td>' + n(m.confidence, 2) + '</td><td>' + esc(m.summary || '') + '</td><td>' + actionsText(m.actions) + '</td></tr>')
+    })
+    return h.join('') + '</table>'
+  }
+  function renderCommittee(j) {
+    var a = j.autopilot || {}
+    var hist = (a.decisionHistory || [])
+    var latest = hist.length ? hist[hist.length - 1] : null
+    var out = []
+    if (a.lastError) out.push('<div class="card"><h3>最近错误</h3><pre class="neg">' + esc(a.lastError) + '</pre></div>')
+    if (a.pauseReason) out.push('<div class="card"><h3>暂停原因</h3><pre>' + esc(a.pauseReason) + '</pre></div>')
+    if (latest) {
+      out.push('<div class="card"><h3>最新一轮 · cycle ' + esc(latest.cycle) + ' · ' + esc(String(latest.at || '').slice(0, 19).replace('T', ' ')) + '</h3>')
+      out.push('<div><span class="tag">regime ' + esc(latest.regime) + '</span><span class="tag">confidence ' + n(latest.confidence, 2) + '</span><span class="tag">专家 ' + esc((latest.committee || {}).successful) + '/' + esc((latest.committee || {}).members ? latest.committee.members.length : '?') + '</span></div>')
+      out.push('<pre>' + esc(latest.summary) + '</pre>')
+      if (latest.noTradeReason) out.push('<div class="muted">不交易原因: ' + esc(latest.noTradeReason) + '</div>')
+      out.push('<div>最终动作: ' + actionsText(latest.actions) + '</div>')
+      out.push(memberTable((latest.committee || {}).members))
+      out.push('</div>')
+    } else { out.push('<div class="muted">还没有决策记录（autopilot 每轮结束后写入）</div>') }
+    $('committee').innerHTML = out.join('')
+    var older = hist.slice(-9, -1).reverse()
+    if (!older.length) { $('history').innerHTML = '' } else {
+      var h = ['<h2>历史轮次（最近 8 轮）</h2>']
+      older.forEach(function (d) {
+        h.push('<div class="card"><h3>cycle ' + esc(d.cycle) + ' · ' + esc(String(d.at || '').slice(0, 19).replace('T', ' ')) + ' · regime ' + esc(d.regime) + ' · conf ' + n(d.confidence, 2) + '</h3>')
+        h.push('<pre>' + esc(d.summary) + '</pre><div>动作: ' + actionsText(d.actions) + '</div>')
+        h.push(memberTable((d.committee || {}).members))
+        h.push('</div>')
+      })
+      $('history').innerHTML = h.join('')
+    }
+    var stats = a.modelStats || {}
+    var keys = Object.keys(stats)
+    if (keys.length) {
+      var s = ['<h2>专家战绩</h2><table><tr><th>专家</th><th>投票</th><th>命中</th><th>准确率</th></tr>']
+      keys.forEach(function (k) { var v = stats[k] || {}; var acc = v.votes ? (Number(v.correct || 0) / Number(v.votes)) : 0; s.push('<tr><td>' + esc(k) + '</td><td>' + n(v.votes, 0) + '</td><td>' + n(v.correct, 0) + '</td><td>' + (v.votes ? (acc * 100).toFixed(0) + '%' : '-') + '</td></tr>') })
+      $('stats').innerHTML = s.join('') + '</table>'
+    }
+  }
+  function render(j) {
+    var a = j.autopilot || {}
+    var line = []
+    line.push('模式 ' + j.mode)
+    line.push('权益 ' + n((j.account || {}).equity))
+    line.push('今日 ' + n((j.account || {}).dayPnl))
+    line.push('持仓 ' + ((j.positions || []).length))
+    line.push('循环 ' + (a.enabled === false ? '已停止' : (a.running ? '本轮运行中' : '待命')))
+    line.push('cycle ' + (a.cycle || 0))
+    line.push('下次 ' + (a.nextRunAt ? new Date(a.nextRunAt).toLocaleString() : '-'))
+    $('stat').textContent = line.join(' · ')
+    ;['paper', 'testnet', 'live'].forEach(function (m) { $('m-' + m).className = (j.mode === m ? 'on' : '') })
+    $('btn-toggle').textContent = a.enabled === false ? '启动' : '停止'
+    if (a.lastRunAt && a.nextRunAt) { var iv = Math.round((new Date(a.nextRunAt) - new Date(a.lastRunAt)) / 60000); if (iv > 0) $('interval').value = iv }
+    renderPnl(j); renderPositions(j); renderFills(j); renderCommittee(j)
+  }
+  function refresh() {
+    fetch('/qbot/status').then(function (r) { return r.json() }).then(render)
+      .catch(function (e) { $('stat').textContent = '面板未连接: ' + e.message })
+  }
+  ;['paper', 'testnet', 'live'].forEach(function (m) {
+    $('m-' + m).addEventListener('click', function () {
+      var payload = { action: 'set_mode', mode: m }
+      if (m === 'live') {
+        if (!window.confirm('切到实盘会使用真实资金，且需要配置 allowLive: true。确认切换？')) return
+        payload.confirmation = 'LIVE'
+      }
+      say('切换中…')
+      control(payload).then(function () { say('模式已切到 ' + m); refresh() }).catch(function (e) { say('切换失败: ' + e.message) })
+    })
+  })
+  $('btn-toggle').addEventListener('click', function () {
+    var stopping = $('btn-toggle').textContent === '停止'
+    say(stopping ? '停止自动循环…' : '启动自动循环…')
+    control({ action: stopping ? 'pause' : 'resume' }).then(function () { say(stopping ? '已停止' : '已启动'); refresh() }).catch(function (e) { say('操作失败: ' + e.message) })
+  })
+  $('btn-once').addEventListener('click', function () {
+    say('已请求立即执行一轮…')
+    control({ action: 'run_once' }).then(function () { say('本轮已开始'); refresh() }).catch(function (e) { say('操作失败: ' + e.message) })
+  })
+  $('btn-flat').addEventListener('click', function () {
+    if (!window.confirm('平掉当前所有持仓（reduce-only）？')) return
+    say('紧急平仓中…')
+    control({ action: 'close_all' }).then(function () { say('已提交平仓'); refresh() }).catch(function (e) { say('操作失败: ' + e.message) })
+  })
+  $('btn-interval').addEventListener('click', function () {
+    var minutes = Number($('interval').value)
+    say('应用间隔…')
+    control({ action: 'set_interval', minutes: minutes }).then(function () { say('间隔已改为 ' + minutes + ' 分钟'); refresh() }).catch(function (e) { say('操作失败: ' + e.message) })
+  })
+  refresh(); setInterval(refresh, 5000)
+})()
+</script>
+</body>
+</html>

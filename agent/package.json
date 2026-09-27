@@ -1,0 +1,25 @@
+{
+  "name": "@qbot/dsh-agent",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "QBot trading agent bundle: identity, QBot tools and dashboard lifecycle for the independent QBot DSH engine",
+  "exports": {
+    ".": "./cordis.patch.yml",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./plugins/*": "./plugins/*.mjs",
+    "./lib/*": "./lib/*.mjs",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-system-prompt": "*",
+    "@deepseek-ai/dsh-tools": "*",
+    "@deepseek-ai/schemastery": "*"
+  }
+}

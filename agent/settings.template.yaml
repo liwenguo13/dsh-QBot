@@ -1,0 +1,39 @@
+# QBot agent settings — lives at qbot-dsh/home/settings.yaml (DSH_HOME=qbot-dsh/home).
+#
+# opencode-go 的 deepseek-v4.1-flash 比已安装的 pi-ai 目录（0.85.1）新，所以这里
+# 用 models 列表手工声明：包目录没有它时 modelOverrides 会被拒绝；api/baseURL/
+# compat 与目录里的 deepseek-v4-flash 保持一致。Console Go 还要求
+# x-opencode-session 头，pi-ai 0.85.1 不会自动发送，这里按路由静态配置。
+llm-pi-ai:
+  providers:
+    opencode-go:
+      apiKeyEnv: OPENCODE_GO_API_KEY
+      api: openai-completions
+      baseURL: https://opencode.ai/zen/go/v1
+      headers:
+        x-opencode-session: qbot-agent
+        User-Agent: Mozilla/5.0
+      models:
+        - id: deepseek-v4.1-flash
+          name: DeepSeek V4.1 Flash
+          contextWindow: 1000000
+          maxTokens: 32768
+          reasoningEfforts:
+            off:
+            low: low
+            high: high
+            max: max
+          compat:
+            supportsStore: false
+            supportsDeveloperRole: false
+            maxTokensField: max_tokens
+            requiresReasoningContentOnAssistantMessages: true
+            thinkingFormat: deepseek
+agent-default-model:
+  provider: opencode-go
+  model: deepseek-v4.1-flash
+  reasoningEffort: max
+permission:
+  defaultPreset: danger-full-access
+ui-theme:
+  preference: dark

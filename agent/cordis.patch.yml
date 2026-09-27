@@ -1,0 +1,228 @@
+# @qbot/dsh-agent — QBot 交易智能体层（叠加在 dsh-base + dsh-web-app 之后）。
+#
+# 这是一个正式的 DSH profile bundle：通过 `dsh plugin --profile <profile> add` 安装后，
+# 其 dsh.bundle.patch 会被追加到 profile 的组合层里。`- id:` 覆盖既有行（config 整体替换），
+# `- insert:` 追加新行；行内的插件名按 profile 解析，QBot 自己的插件来自本包 exports。
+#
+# 同一份补丁同时用于 Windows 桌面版和 Linux QBot 引擎：平台差异一律走 `!!js` 表达式，
+# 不写死 Linux 专有绝对路径（挂载盘或 home 目录），需要区分的值可以用环境变量覆盖。
+# 桌面应用拥有的行（permission 预设、ui-theme、agent-default-model、llm-pi-ai、tool-web）
+# 这里不覆盖；sandbox-policy 的表达式与 dsh-base 完全一致，桌面端未设置
+# QBOT_WORKSPACE / DSH_PERMISSION_MODE 时求值结果逐字相同，不改变桌面语义。
+#
+# 设计原则：轻。核心只有三个插件——交易台（qbot-core）、联网搜索（qbot-web）、
+# 动态插件工具集（cordis）；交易方法论放在 skill（qbot-trading）里按需加载。
+
+# ── （可选）整机 QBot 身份：覆盖 web 层的 system-prompt 行 ────────────────────
+# 桌面版默认把 QBot 身份放在下面的 preset-qbot 预设里（按会话选择，不影响其他会话）。
+# 若希望桌面应用的所有会话都变成 QBot，取消本块注释即可（与 preset-qbot 二选一）。
+#
+# - id: system-prompt
+#   config:
+#     personaPrefix: |-
+#       You are QBot — an autonomous trading agent operating in real crypto markets, running on your own DeepSeek Harness engine.
+#       You run fully autonomously: the user only supplies API keys and does not direct you. Unless the user interrupts, you keep observing, deciding, executing and reviewing on your own.
+#       Your goal: achieve long-run positive expectancy under strict risk control and grow the user's account. You make the judgements; the tools enforce the discipline.
+#
+#       ## How you work
+#       - Before any trading decision, load `qbot-trading` with the skill tool (your trading system: market regime, the four setups, sizing and stops, review).
+#       - Look: market_data (price/book/funding/OI), market_indicators (multi-timeframe indicators), market_regime (trend/range/chaotic), market_news (news + Fear & Greed), autopilot_status (autonomous loop state), web_search (web search), web_fetch (read the source).
+#       - Act: desk_status / desk_order / desk_close / desk_cancel / desk_leverage / desk_risk / desk_mode / desk_history / desk_protect / position_size.
+#       - C++ kernel: cpp_engine_status and cpp_risk_size (the compiled qbot_cpp; cross-check risk sizing with it first).
+#       - Record: the workspace journal/YYYY-MM-DD.md; write review conclusions back into the qbot-trading skill.
+#       - Run: qbot-autopilot wakes you on the configured cadence; check autopilot_status for the loop state. For long-term goals, get the user's consent before create_goal.
+#
+#       ## Hard discipline (non-negotiable)
+#       - Every entry must carry stop_loss; no stop logic means no order.
+#       - Default to paper mode; never switch to testnet/live and never place a real order without an explicit user request.
+#       - Switching to live requires explicit user confirmation (desk_mode confirmation="LIVE") and allowLive=true in the config; closing a live position requires confirmation="CLOSE".
+#       - Respect desk_risk rejections: read the reason, adjust, and do not try to bypass them.
+#       - Never fabricate data; verify news against price/volume; cite links and timestamps for external information.
+#       - Never reveal API keys, private keys, seed phrases or other secrets.
+#
+#       ## Self-extension
+#       When current tools cannot solve a problem, build your own: use cordis_define / cordis_run for temporary capabilities;
+#       write persistent plugins under qbot-dsh/agent/plugins/ and add the row to the profile user patch layer (hot reload: qbot-dsh/home/profiles/qbot/cordis.patch.yml; restart: qbot-dsh/agent/cordis.patch.yml).
+#       Keep plugins small and focused, put parameters in Config, require confirmation for dangerous operations; explain the plan to the user before changing your own runtime config.
+#
+#       ## Communication
+#       Communicate with the user in Chinese (switch to English when the user writes in English); lead with conclusions and key data, then details;
+#       trading reports include: account and positions, actions this round, risk and rationale, next step.
+#     personaSuffix: Your working directory is {{cwd}}.
+- insert:
+    # 核心：共享 market/desk/paper 状态、风控 rails 和 home panel JSON server。
+    - id: qbot-core
+      name: '@qbot/dsh-agent/plugins/qbot-core'
+      config:
+        marketProvider: gateio
+        paperWallet: 10000
+        takerFeeRate: 0.0005
+        defaultLeverage: 3
+        maxLeverage: 5
+        maxOrderNotional: 2000
+        maxGrossNotional: 10000
+        maxDailyLoss: 500
+        # 实盘总开关：false 时，即使模型拿到 LIVE 确认也无法切到 live。
+        # 用户明确要求实盘、并确认风险后，把下一行改成 true 再重启。
+        allowLive: false
+        liveBackend: gateio
+        # 面板端口：Windows 桌面版默认 8791（WSL QBot 引擎已占用 8790），Linux 保持 8790；
+        # 可用 QBOT_PANEL_PORT 覆盖。端口被占用时只告警，desk 继续运行。
+        panelPort: !!js "process.env.QBOT_PANEL_PORT ? Number(process.env.QBOT_PANEL_PORT) : (process.platform === 'win32' ? 8791 : 8790)"
+        panelSymbol: BTCUSDT
+        # C++ 内核：留空 = 先找 bundle 相邻的 qbot_cpp(.exe)，Windows 上再回退到 WSL 运行 Linux ELF。
+        # cppWslDistro 留空 = 自动取第一个 WSL 发行版（可用 QBOT_CPP_WSL_DISTRO 覆盖）；
+        # cppWslBinPath 留空 = 从 bundle / 源码目录推导（可用 QBOT_CPP_WSL_BIN 覆盖）。
+        cppBinPath: ''
+        cppWslDistro: ''
+        cppWslBinPath: ''
+        cppRiskPct: 1
+        cppTimeoutMs: 10000
+        # 自动交易循环：默认单模型；多个模型用逗号分隔即可启用委员会。
+        autopilotEnabled: true
+        autopilotIntervalMinutes: 60
+        autopilotStartupDelaySeconds: 20
+        autopilotSymbols: BTCUSDT,ETHUSDT,SOLUSDT
+        # 多 Agent：全部使用 opencode-go / deepseek-v4.1-flash，但给不同委员会角色，制造多样性和分歧。
+        autopilotModels: 'opencode-go:deepseek-v4.1-flash@trend,opencode-go:deepseek-v4.1-flash@reversal,opencode-go:deepseek-v4.1-flash@news,opencode-go:deepseek-v4.1-flash@risk'
+        autopilotReasoningEffort: max
+        autopilotMaxTokens: 16000
+        autopilotCommitteeMinAgreement: 0.55
+        autopilotMaxDrawdownPct: 10
+        autopilotMaxConsecutiveErrors: 3
+        autopilotAllowTestnet: true
+        autopilotAllowLive: false
+        # Dream-RSI：在真实历史上离线回放并进化 exploration controller
+        dreamEnabled: true
+        dreamIntervalCycles: 20
+        dreamMinImprovement: 0.0001
+        dreamMaxCandidates: 12
+        dreamSlippageBps: 2
+        dreamAllowControllerCode: true
+
+    # 自动交易循环：按 interval 唤醒模型，生成决策并执行，无需用户指挥。
+    - id: qbot-autopilot
+      name: '@qbot/dsh-agent/plugins/qbot-autopilot'
+
+    # 行情任务插件：ticker / candles / depth / funding / contract / 指标 / regime。
+    - id: qbot-market
+      name: '@qbot/dsh-agent/plugins/qbot-market'
+    # 新闻任务插件：RSS + Fear & Greed。
+    - id: qbot-news
+      name: '@qbot/dsh-agent/plugins/qbot-news'
+    # 风控任务插件：风险预算、仓位计算、桌面 rails 调整。
+    - id: qbot-risk
+      name: '@qbot/dsh-agent/plugins/qbot-risk'
+    # 执行任务插件：订单、平仓、杠杆、保护、历史、模式、journal。
+    - id: qbot-execution
+      name: '@qbot/dsh-agent/plugins/qbot-execution'
+
+    # 无密钥联网搜索（Bing）：新闻、叙事、代币研究、宏观事件。
+    - id: qbot-web
+      name: '@qbot/dsh-agent/plugins/qbot-web'
+
+    # DSH 动态 Cordis 插件工具集：模型可现场定义、运行、更新临时工具。
+    # （浏览器控制面板 ui-cordis 已由 web-app 层挂载，这里不要再插入。）
+    - id: qbot-cordis-tools
+      name: '@deepseek-ai/dsh-tool-cordis'
+
+    # 定时提醒：交易循环的节拍器；time-context 提供当前时间。
+    - id: qbot-time-context
+      name: '@deepseek-ai/dsh-time-context'
+    - id: qbot-schedule
+      name: '@deepseek-ai/dsh-schedule'
+
+    # C++ 执行内核桥：仓位/风险计算由编译后的 qbot_cpp 完成。
+    # 保持启用：Windows 上走 WSL 后端，缺内核时只让对应工具调用报错，插件本身照常加载。
+    - id: qbot-cpp
+      name: '@qbot/dsh-agent/plugins/qbot-cpp'
+      config:
+        binPath: ''
+        cppWslDistro: ''
+        cppWslBinPath: ''
+
+    # 用户原有的 Python QBot 系统工具（状态/控制/回测/日志等）。
+    # 现在交易由模型 + desk 负责，这些默认关闭以保持轻量；它们的 qbotRoot 是 Linux
+    # 路径，所以这里不写死：启用时把 QBOT_ROOT 环境变量指到真实路径。
+    - id: qbot-tools
+      name: '@qbot/dsh-agent/plugins/qbot-tools'
+      disabled: true
+      config:
+        qbotRoot: !!js process.env.QBOT_ROOT ?? ''
+    - id: qbot-python-dashboard
+      name: '@qbot/dsh-agent/plugins/qbot-dashboard'
+      disabled: true
+      config:
+        qbotRoot: !!js process.env.QBOT_ROOT ?? ''
+        host: 127.0.0.1
+        port: 8787
+        autoStart: true
+
+    # QBot agent 预设：桌面版在会话里选择 QBot 即挂载 QBot 身份 + 技能系统，
+    # 让 qbot-trading 技能可以按需加载；交易工具来自上面的 host 行，任何预设都能看到。
+    # Linux 引擎副本是 0.1.6-alpha.1，没有 @deepseek-ai/dsh-agent-preset（它使用
+    # dsh-agent-presets 目录预设），所以该行仅在 win32 或 QBOT_AGENT_PRESET=1 时启用，
+    # 避免 Linux 上多出一条无意义的 import 失败。
+    - id: preset-qbot
+      name: '@deepseek-ai/dsh-agent-preset'
+      disabled: !!js process.platform !== 'win32' && process.env.QBOT_AGENT_PRESET !== '1'
+      config:
+        id: qbot
+        name: QBot Trading Agent
+        description: Autonomous market analysis, risk-gated orders and review
+        order: 10
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are QBot — an autonomous trading agent operating in real crypto markets, running on your own DeepSeek Harness engine.
+                The user only supplies API keys and does not direct you; unless the user interrupts, you keep observing, deciding, executing and reviewing on your own.
+                Goal: achieve long-run positive expectancy under strict risk control. You make the judgements; the tools enforce the discipline.
+
+                ## How you work
+                - Before any trading decision, load `qbot-trading` with the skill tool (your trading system: market regime, setups, sizing and stops, review).
+                - Look: market_data, market_indicators, market_regime, market_news, autopilot_status, web_search, web_fetch.
+                - Act: desk_status / desk_order / desk_close / desk_cancel / desk_leverage / desk_risk / desk_mode / desk_history / desk_protect / position_size.
+                - C++ kernel: cpp_engine_status and cpp_risk_size (cross-check risk sizing with the C++ engine first).
+                - Record: journal_append into the workspace journal/YYYY-MM-DD.md; write review conclusions back into the qbot-trading skill.
+
+                ## Hard discipline (non-negotiable)
+                - Every entry must carry stop_loss; no stop logic means no order.
+                - Default to paper mode; never switch to testnet/live and never place a real order without an explicit user request.
+                - Switching to live requires explicit user confirmation (desk_mode confirmation="LIVE") and allowLive=true in the config; closing a live position requires confirmation="CLOSE".
+                - Respect desk_risk rejections: read the reason, adjust, and do not try to bypass them.
+                - Never fabricate data; verify news against price/volume; cite links and timestamps for external information.
+                - Never reveal API keys, private keys, seed phrases or other secrets.
+
+                ## Communication
+                Communicate with the user in Chinese (switch to English when the user writes in English); lead with conclusions and key data, then details.
+              suffix: Your working directory is {{cwd}}.
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+
+# ── 打开被 web 层默认关闭的入口 ──────────────────────────────────────────────
+# 技能系统：Windows 桌面版扫描 %USERPROFILE%\.dsh\skills（DSH 默认 user root）；
+# Linux QBot 引擎额外扫描 $QBOT_WORKSPACE/skills（run-qbot.sh 播种技能的位置）。
+# customSkillDirs 用 !!js 表达式：win32 或未设置 QBOT_WORKSPACE 时为空数组，
+# 桌面端保持 DSH 默认 roots 不变。
+- id: skill-filesystem
+  disabled: false
+  config:
+    customSkillDirs: !!js "process.platform === 'win32' ? [] : (process.env.QBOT_WORKSPACE ? [process.env.QBOT_WORKSPACE + '/skills'] : (process.env.DSH_HOME ? [process.env.DSH_HOME + '/workspace/skills'] : []))"
+- id: tool-skill
+  disabled: false
+
+# 定时提醒的侧边栏 UI。
+- id: ui-schedule
+  disabled: false
+
+# 工作区根目录：QBot 的相对文件操作落在 QBOT_WORKSPACE（由 run-qbot.sh 提供）。
+# 该行必须重述 mode，因为补丁会替换整块 config；表达式与 dsh-base 逐字一致，
+# 桌面端两个变量都未设置时求值结果与 base 行相同，不改变桌面应用自己的语义。
+- id: sandbox-policy
+  config:
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+    workspaceRoot: !!js process.env.QBOT_WORKSPACE ?? process.cwd()

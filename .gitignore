@@ -1,0 +1,9 @@
+node_modules/
+logs/
+dist/
+home/
+*.bundle
+*.log
+__pycache__/
+cpp/qbot_cpp
+cpp/qbot_cpp.exe
