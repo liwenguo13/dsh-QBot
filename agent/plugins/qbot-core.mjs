@@ -312,6 +312,14 @@ export function apply(ctx, config) {
     }
 
     if (pathname === '/qbot/control' && request.method === 'POST') {
+      // Control mutates the desk, so only local origins may drive it: a page on the
+      // public web must not be able to pause the loop or flatten positions.
+      const origin = request.headers.origin
+      if (typeof origin === 'string' && origin !== '' && !/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(origin)) {
+        response.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' })
+        response.end(JSON.stringify({ ok: false, error: 'cross-origin control requests are refused' }))
+        return
+      }
       try {
         const chunks = []
         for await (const chunk of request) chunks.push(chunk)

@@ -16,6 +16,9 @@
       "patch": "./cordis.patch.yml"
     }
   },
+  "dependencies": {
+    "@qbot/dsh-ui-console": "file:./ui"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",
     "@deepseek-ai/dsh-system-prompt": "*",

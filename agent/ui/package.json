@@ -1,0 +1,22 @@
+{
+  "name": "@qbot/dsh-ui-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "QBot trading console as a DSH client UI plugin: a composer-dock button plus a frame overlay panel with monitoring, mode switch and autopilot start/stop.",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
+    }
+  }
+}

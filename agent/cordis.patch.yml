@@ -203,6 +203,10 @@
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
 
+    # 桌面 UI：会话输入区一个 QBot 控制台按钮，点开是全屏浮层面板（客户端插件，随 bundle 安装）。
+    # 面板读 127.0.0.1 面板端口的 /qbot/status，控制走 /qbot/control（仅允许本机来源）。
+    - id: qbot-console-ui
+      name: '@qbot/dsh-ui-console'
 # ── 打开被 web 层默认关闭的入口 ──────────────────────────────────────────────
 # 技能系统：Windows 桌面版扫描 %USERPROFILE%\.dsh\skills（DSH 默认 user root）；
 # Linux QBot 引擎额外扫描 $QBOT_WORKSPACE/skills（run-qbot.sh 播种技能的位置）。
