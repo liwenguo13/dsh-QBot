@@ -153,6 +153,11 @@ export function apply(ctx, config) {
   const stateDir = config.stateDir !== ''
     ? config.stateDir
     : (process.env.QBOT_STATE_DIR ? process.env.QBOT_STATE_DIR : resolve(home, 'desk'))
+  // Journals and Dream-RSI data live beside the desk state, under the same home
+  // the Host actually uses (the desktop Host passes its home as an argument, so
+  // DSH_HOME may be unset there: fall back to ~/.dsh, never to ~/.qbot-dsh).
+  const workspaceDir = process.env.QBOT_WORKSPACE ?? resolve(home, 'workspace')
+
   const market = createMarket(config.marketProvider)
   const desk = createDesk({
     stateDir,
@@ -215,7 +220,7 @@ export function apply(ctx, config) {
     dreamLastRunAt: null,
     dreamLastError: null,
   }
-  const qbotCore = { market, desk, config, autopilotState, autopilotControl: null }
+  const qbotCore = { market, desk, config, autopilotState, autopilotControl: null, home, stateDir, workspaceDir }
 
   /** Build a compact status payload for the QBot home panel. */
   const panelStatus = async () => {

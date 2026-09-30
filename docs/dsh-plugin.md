@@ -187,3 +187,25 @@ Get-Content "$env:USERPROFILE\.dsh\profiles\desktop\package.json" -Raw
 - 点一下在窗口右上浮出完整面板（模式切换 / 启动停止 / 立即跑一轮 / 紧急平仓 / 间隔 / 收益 / 多专家讨论），再点收起；
 - 面板端口可配置：客户端会依次探测 8791 / 8790 / 8792 / 8793，用第一个响应的那个；
 - 安全：面板只监听 127.0.0.1；`/qbot/control` 会校验来源，只接受本机来源（无 Origin 或 `http://127.0.0.1:*` / `http://localhost:*`），其他站点发起的请求返回 403，避免网页偷偷暂停循环或平仓。
+
+## 独立引擎模式已移除
+
+如需重建已删除的 `dsh-base` 引擎副本（仅供历史参考）：
+
+```bash
+git clone https://gh-proxy.com/https://github.com/deepseek-ai/deepseek-harness.git dsh-base/source
+cd dsh-base/source && git checkout 0b3d39d2   # 删除时的 HEAD
+```
+
+（备份目录 `_qbot-cleanup-20260930` 已按用户要求删除，其中包含旧 `~/.qbot-dsh` 的 tar 包。）
+
+2026-09-30：`dsh-base/`（引擎源码副本）、`home`、`run-qbot.sh`、`launcher/` 与旧引擎脚本已删除，
+WSL 侧的 `~/.qbot-dsh`、`~/.qbot-engine` 也已清理（备份：`D:\klein\code_agent\_qbot-cleanup-20260930\`）。
+现在只有插件模式：桌面版 profile 安装 `@qbot/dsh-agent`，C++ 内核仍走 `cpp/qbot_cpp`（Windows 经 WSL 调用）。
+
+## 状态与日志落在哪
+
+- desk 状态：`<DSH_HOME>/desk/state.json`（桌面版 `%USERPROFILE%\.dsh\desk\state.json`；`QBOT_STATE_DIR` 可覆盖）
+- autopilot journal 与 Dream-RSI 数据：`<DSH_HOME>/workspace/{journal,dream}`（桌面版 `%USERPROFILE%\.dsh\workspace`；`QBOT_WORKSPACE` 可覆盖）
+- 技能：安装脚本播种到 `%USERPROFILE%\.dsh\skills\`，autopilot 的复盘也写回同一份
+- 桌面 Host 不设置 `DSH_HOME` 环境变量（home 以启动参数传入），所以插件统一回落到 `~/.dsh`：**不会再写 `~/.qbot-dsh`**

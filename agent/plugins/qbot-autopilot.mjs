@@ -39,10 +39,11 @@ function extractJson(text) {
   return JSON.parse(text.slice(start, end + 1))
 }
 
+let workspaceOverride = ''
 function workspaceDir() {
   if (process.env.QBOT_WORKSPACE) return process.env.QBOT_WORKSPACE
-  if (process.env.DSH_HOME) return resolve(process.env.DSH_HOME, 'workspace')
-  return resolve(homedir(), '.qbot-dsh', 'workspace')
+  if (workspaceOverride !== '') return workspaceOverride
+  return resolve(process.env.DSH_HOME ?? resolve(homedir(), '.dsh'), 'workspace')
 }
 
 /** Skill roots in priority order: workspace copy, DSH user skills (installer-seeded), legacy QBot home. */
@@ -203,6 +204,7 @@ export function aggregateDecisions(decisions, minAgreement = 0.6) {
 
 export function apply(ctx, config) {
   const core = typeof ctx.get === 'function' ? ctx.get('qbotCore') : undefined
+  workspaceOverride = typeof core?.workspaceDir === 'string' ? core.workspaceDir : ''
   if (!core) throw new Error('qbot-autopilot requires the qbotCore service')
   const { market, desk, config: coreConfig, autopilotState } = core
   const state = autopilotState

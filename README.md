@@ -9,79 +9,45 @@ QBot 是一个**完全独立的 agent**，不是 `deepseek-harness-dsh` 的一�
 
 它继承 DSH 的全部能力（Web 客户端、会话、subagent、计划、bash、文件、网页、后台作业、定时任务），并且被明确赋予**自我扩展**能力：遇到当前工具解决不了的问题时，可以自己写插件。
 
+> **2026-09-30 更新：独立引擎模式已移除。** `dsh-base/`、`home`、`run-qbot.sh`、`launcher/` 与旧引擎脚本
+> 都已删除（备份在 `D:\klein\code_agent\_qbot-cleanup-20260930\`）。本仓库现在只作为
+> **DeepSeek Harness 桌面版插件** 使用，安装与用法见 [`docs/dsh-plugin.md`](docs/dsh-plugin.md)。
+> 下面「快速开始」一节已改为插件模式；提到 `~/.qbot-dsh`、`run-qbot.sh`、桌面快捷方式的段落均为历史记录。
+
 ## 目录
 
 ```text
 qbot-dsh/
-  agent/                         # @qbot/dsh-agent：QBot 的 agent bundle
-    cordis.patch.yml             #   profile 补丁层：人设、工具、dashboard、动态插件
-    settings.template.yaml       #   首次安装写入 home/settings.yaml 的模板
-    plugins/qbot-tools.mjs       #   QBot 模型工具（8 个）
-    plugins/qbot-dashboard.mjs   #   Python dashboard 常驻管理
-  dsh-base/source/               # QBot 自有 DSH 引擎（完整副本，含 .git，分支 qbot-local）
-  home -> ~/.qbot-dsh            # DSH_HOME：profiles/qbot、settings.yaml、.credentials.yaml
-  scripts/
-    install-qbot-agent.sh        # 初始化 profile + 安装 agent bundle
-    build-engine.sh              # pnpm install + pnpm run build
-    update-engine.sh             # 升级到官方最新 dsh-v* 并重建
-    install-dsh-plugin.ps1       # 装进 Windows 桌面版 DeepSeek Harness（可选）
-    uninstall-dsh-plugin.ps1     # 卸载
-    status-dsh-plugin.ps1        # 安装状态
-  docs/
-    dsh-plugin.md                # 桌面插件安装 / 排错说明
-  launcher/                      # Windows 快捷方式入口（VBS + cmd + create-shortcut.ps1）
-  run-qbot.sh                    # 启动 / 停止 QBot
-  logs/                          # 运行日志
+  agent/                         # @qbot/dsh-agent：DSH 插件 bundle
+    cordis.patch.yml             #   profile 补丁层：行、配置、QBot agent preset
+    plugins/                     #   qbot-core / autopilot / market / news / risk / execution / web / cpp / tools / dashboard
+    lib/                         #   desk / market / dream / tool-groups / cpp 桥
+    assets/                      #   控制台页面 + 浮动监控面板
+    skills/                      #   qbot-trading / qbot-extension
+    ui/                          #   应用内「QBot 控制台」按钮插件（客户端 UI）
+  cpp/                           # C++ 风控内核源码 + Makefile
+  scripts/                       # install / uninstall / status-dsh-plugin.ps1（Windows）
+  docs/dsh-plugin.md             # 安装、用法、安全与排错
+  dist/                          # 发布产物（git bundle / zip / 暂存仓库）
+  logs/                          # 运行与验证日志
 ```
 
 > `home` 是指向 `~/.qbot-dsh` 的软链接：drvfs 不保存 Unix 权限，凭据文件放在 D: 会被 DSH
 > 以 world-readable 拒绝；会话库放 ext4 也更快。设置 `QBOT_DSH_HOME` 可完全覆盖该位置。
 
-## 快速开始
+## 快速开始（插件模式）
 
-```bash
-cd /mnt/d/klein/code_agent/qbot-dsh
-
-# 1) 构建 QBot 自有引擎（首次约 10-20 分钟；依赖已在本机 store 时会很快）
-./scripts/build-engine.sh
-
-# 2) 初始化 QBot home、qbot profile，并安装 agent bundle
-./scripts/install-qbot-agent.sh
-
-# 3) 启动（自动打开 Edge 应用窗口）
-./run-qbot.sh
-
-# 停止
-./run-qbot.sh --stop
+```powershell
+cd D:\klein\code_agent\qbot-dsh
+.\scripts\install-dsh-plugin.ps1 -DryRun   # 预演，不写任何文件
+.\scripts\install-dsh-plugin.ps1           # 安装到桌面版 profile（pnpm file: 快照 + 注册 bundle + 播种技能）
+.\scripts\status-dsh-plugin.ps1            # 查看安装状态
 ```
 
-常用参数：
+重启 DeepSeek Harness，用 **QBot Trading Agent** 预设开会话，输入框旁即出现「QBot 控制台」按钮；
+控制台页面也可以直接开 `http://127.0.0.1:8791/`。完整说明见 [`docs/dsh-plugin.md`](docs/dsh-plugin.md)。
 
-```bash
-./run-qbot.sh --no-open    # 只启动服务，不开窗口
-./run-qbot.sh --build      # 先构建再启动
-QBOT_DSH_PORT=3091 ./run-qbot.sh
-```
-
-## 桌面入口
-
-桌面只保留一个图标：
-
-```text
-C:\Users\33407\Desktop\QBot Terminal.lnk
-```
-
-链路：
-
-```text
-QBot Terminal.lnk
-  -> wscript.exe
-  -> qbot-dsh\launcher\QBot Terminal.vbs
-  -> launcher\qbot-server.cmd
-  -> wsl.exe -d Ubuntu-26.04 -- ./run-qbot.sh
-  -> qbot 自有引擎 + qbot profile + qbot home
-  -> Edge 应用窗口 http://127.0.0.1:3090
-```
+> 历史：旧的独立引擎模式（`dsh-base` + `~/.qbot-dsh` + `run-qbot.sh` + 桌面快捷方式）已于 2026-09-30 移除。
 
 ## QBot 工具
 
